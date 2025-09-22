@@ -215,6 +215,82 @@ class HTMLPurifier_URISchemeTest extends HTMLPurifier_URIHarness
         );
     }
 
+    public function test_sms_strip_punctuation()
+    {
+        $this->assertValidation(
+            'sms:+1 (555) 555-5555', 'sms:+15555555555'
+        );
+    }
+
+    public function test_sms_with_url_encoding()
+    {
+        $this->assertValidation(
+            'sms:+1%20(555)%20555-5555', 'sms:+15555555555'
+        );
+    }
+
+    public function test_sms_regular()
+    {
+        $this->assertValidation(
+            'sms:+15555555555'
+        );
+    }
+
+    public function test_sms_no_plus()
+    {
+        $this->assertValidation(
+            'sms:555-555-5555', 'sms:5555555555'
+        );
+    }
+
+    public function test_sms_strip_letters()
+    {
+        $this->assertValidation(
+            'sms:abcd1234',
+            'sms:1234'
+        );
+    }
+
+    public function test_sms_with_body_query()
+    {
+        $this->assertValidation(
+            'sms:5555&body=HOME',
+            'sms:5555&body=HOME'
+        );
+    }
+
+    public function test_sms_strip_invalid_params()
+    {
+        $this->assertValidation(
+            'sms:+15555555555&body=Hello&subject=Test',
+            'sms:+15555555555&body=Hello'
+        );
+    }
+
+    public function test_sms_with_url_encoded_body()
+    {
+        $this->assertValidation(
+            'sms:5555&body=Hello%20World',
+            'sms:5555&body=Hello%20World'
+        );
+    }
+
+    public function test_sms_strip_dangerous_query_params()
+    {
+        $this->assertValidation(
+            'sms:5555&body=<script>alert("xss")</script>&subject=Test',
+            'sms:5555&body='
+        );
+    }
+
+    public function test_sms_strip_invalid_query_params()
+    {
+        $this->assertValidation(
+            'sms:5555&body=HOME&invalid=param&subject=Test',
+            'sms:5555&body=HOME'
+        );
+    }
+
     public function test_data_png()
     {
         $this->assertValidation(
