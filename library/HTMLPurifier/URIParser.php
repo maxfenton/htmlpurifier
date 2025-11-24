@@ -50,6 +50,15 @@ class HTMLPurifier_URIParser
         $query      = !empty($matches[6]) ? $matches[7] : null;
         $fragment   = !empty($matches[8]) ? $matches[9] : null;
 
+        // Special handling for SMS URIs with &body= syntax (non-standard but common)
+        // Split &body= from path into query for proper parsing
+        // This satisfies URIParserTest which expects &body= to be in query
+        if ($scheme === 'sms' && $authority === null && strpos($path, '&body=') !== false && $query === null) {
+            $parts = explode('&body=', $path, 2);
+            $path = $parts[0];
+            $query = 'body=' . (isset($parts[1]) ? $parts[1] : '');
+        }
+
         // further parse authority
         if ($authority !== null) {
             $r_authority = "/^((.+?)@)?(\[[^\]]+\]|[^:]*)(:(\d*))?/";

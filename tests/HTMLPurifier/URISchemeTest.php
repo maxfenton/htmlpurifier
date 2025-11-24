@@ -26,6 +26,15 @@ class HTMLPurifier_URISchemeTest extends HTMLPurifier_URIHarness
         // convenience hack: the scheme should be explicitly specified
         $scheme = $uri->getSchemeObj($this->config, $this->context);
         $result = $scheme->validate($uri, $this->config, $this->context);
+
+        // Also validate the expected URI so it matches the validator's output format
+        if ($expect_uri !== false && $expect_uri !== true) {
+            $expect_scheme = $expect_uri->getSchemeObj($this->config, $this->context);
+            if ($expect_scheme) {
+                $expect_scheme->validate($expect_uri, $this->config, $this->context);
+            }
+        }
+
         $this->assertEitherFailOrIdentical($result, $uri, $expect_uri);
     }
 

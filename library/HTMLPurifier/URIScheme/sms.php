@@ -37,48 +37,67 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
         $uri->host     = null;
         $uri->port     = null;
 
-        // Handle SMS URIs with &body= syntax (non-standard but common)
-        if (strpos($uri->path, '&body=') !== false) {
-            $parts = explode('&body=', $uri->path, 2);
-            $phone_number = $parts[0];
-            $body_content = isset($parts[1]) ? $parts[1] : '';
+        // Extract phone number and parameters from path and query
+        $phone_number = $uri->path;
+        $body_content = null;
 
-            // Clean the phone number part
-            $phone_number = preg_replace(
-                '/(?!^\+)[^\d]/',
-                '',
-                rawurldecode($phone_number)
-            );
+        // Check if path contains &param= syntax (non-standard but common)
+        if (strpos($phone_number, '&') !== false) {
+            // Split by & to get phone number and parameters
+            $parts = explode('&', $phone_number);
+            $phone_number = array_shift($parts); // First part is the phone number
 
-            // Sanitize the body content
-            $body_content = $this->sanitizeBody($body_content);
-
-            // Reconstruct the path
-            if (!empty($body_content)) {
-                $uri->path = $phone_number . '&body=' . $body_content;
-            } else {
-                $uri->path = $phone_number;
+            // Parse parameters from path
+            foreach ($parts as $param) {
+                if (strpos($param, '=') !== false) {
+                    list($param_name, $param_value) = explode('=', $param, 2);
+                    if ($param_name === 'body') {
+                        $body_content = $param_value;
+                    }
+                    // Other parameters (subject, invalid, etc.) are ignored/stripped
+                }
             }
+        }
+
+        // Also check query string for body parameter (standard ?body= syntax)
+        // Query takes precedence if present (parser converts &body= to ?body=)
+        // The query may contain multiple parameters like "body=Hello&subject=Test"
+        if (!is_null($uri->query)) {
+            // Parse query parameters
+            $query_parts = explode('&', $uri->query);
+            foreach ($query_parts as $query_param) {
+                if (strpos($query_param, '=') !== false) {
+                    list($param_name, $param_value) = explode('=', $query_param, 2);
+                    if ($param_name === 'body') {
+                        $body_content = $param_value;
+                        break; // Only take the first body parameter
+                    }
+                }
+            }
+        }
+
+        // Clean the phone number part
+        $phone_number = preg_replace(
+            '/(?!^\+)[^\d]/',
+            '',
+            rawurldecode($phone_number)
+        );
+
+        // Sanitize the body content if present
+        if ($body_content !== null) {
+            $body_content = $this->sanitizeBody($body_content);
+        }
+
+        // Reconstruct the path with &body= syntax (non-standard but common format)
+        if ($body_content !== null) {
+            // Always include &body= even if empty (per test expectations)
+            $uri->path = $phone_number . '&body=' . $body_content;
         } else {
-            // Clean the phone number (no body parameter)
-            $uri->path = preg_replace(
-                '/(?!^\+)[^\d]/',
-                '',
-                rawurldecode($uri->path)
-            );
+            $uri->path = $phone_number;
         }
 
-        // Handle standard ?body= syntax in query parameters
-        if (!is_null($uri->query) && strpos($uri->query, 'body=') === 0) {
-            $body_content = substr($uri->query, 5); // Remove 'body='
-            $body_content = $this->sanitizeBody($body_content);
-
-            if (!empty($body_content)) {
-                $uri->query = 'body=' . $body_content;
-            } else {
-                $uri->query = null;
-            }
-        }
+        // Clear query since we're using &body= in path format
+        $uri->query = null;
 
         return true;
     }
