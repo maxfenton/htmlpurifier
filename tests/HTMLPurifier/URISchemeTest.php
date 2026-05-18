@@ -300,6 +300,30 @@ class HTMLPurifier_URISchemeTest extends HTMLPurifier_URIHarness
         );
     }
 
+    public function test_sms_no_body()
+    {
+        $this->assertValidation(
+            'sms:988'
+        );
+    }
+
+    public function test_sms_standard_query_format()
+    {
+        // RFC 5724 uses ?body= but &body= is the common web format;
+        // the implementation normalises both to the &body= output form
+        $this->assertValidation(
+            'sms:741741?body=SEIZE',
+            'sms:741741&body=SEIZE'
+        );
+    }
+
+    public function test_sms_short_code()
+    {
+        $this->assertValidation(
+            'sms:741741&body=SEIZE'
+        );
+    }
+
     public function test_data_png()
     {
         $this->assertValidation(

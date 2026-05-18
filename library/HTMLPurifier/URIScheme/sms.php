@@ -109,10 +109,19 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
      */
     private function sanitizeBody($body)
     {
-        // Remove potentially dangerous characters
-        $sanitized = preg_replace('/[<>"\']/', '', $body);
-        // Remove any remaining script-like content
-        $sanitized = preg_replace('/script|alert|javascript/i', '', $sanitized);
-        return $sanitized;
+        // Decode URL encoding first so encoded payloads are caught
+        $decoded = rawurldecode($body);
+
+        // Angle brackets are the primary HTML injection vector — reject the
+        // entire body if they appear rather than trying to strip them partially
+        if (strpos($decoded, '<') !== false || strpos($decoded, '>') !== false) {
+            return '';
+        }
+
+        // Strip quote characters that could break HTML attribute context
+        $sanitized = preg_replace('/[\'"]/', '', $decoded);
+
+        // Re-encode so the value is safe for embedding in a URL attribute
+        return rawurlencode($sanitized);
     }
 }
