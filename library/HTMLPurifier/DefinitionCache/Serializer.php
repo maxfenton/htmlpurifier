@@ -246,6 +246,14 @@ class HTMLPurifier_DefinitionCache_Serializer extends HTMLPurifier_DefinitionCac
                 );
                 return false;
             }
+            // Ensure the directory has the correct permissions, since mkdir() obeys the umask of the current process.
+            if (!@chmod($directory, $chmod)) {
+                trigger_error(
+                    'Could not apply permissions to directory ' . $directory,
+                    E_USER_WARNING
+                );
+                return false;
+            }
             if (!$this->_testPermissions($directory, $chmod)) {
                 return false;
             }
