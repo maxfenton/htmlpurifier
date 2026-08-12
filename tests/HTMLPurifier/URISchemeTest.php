@@ -26,15 +26,6 @@ class HTMLPurifier_URISchemeTest extends HTMLPurifier_URIHarness
         // convenience hack: the scheme should be explicitly specified
         $scheme = $uri->getSchemeObj($this->config, $this->context);
         $result = $scheme->validate($uri, $this->config, $this->context);
-
-        // Also validate the expected URI so it matches the validator's output format
-        if ($expect_uri !== false && $expect_uri !== true) {
-            $expect_scheme = $expect_uri->getSchemeObj($this->config, $this->context);
-            if ($expect_scheme) {
-                $expect_scheme->validate($expect_uri, $this->config, $this->context);
-            }
-        }
-
         $this->assertEitherFailOrIdentical($result, $uri, $expect_uri);
     }
 
@@ -309,11 +300,25 @@ class HTMLPurifier_URISchemeTest extends HTMLPurifier_URIHarness
 
     public function test_sms_standard_query_format()
     {
-        // RFC 5724 uses ?body= but &body= is the common web format;
-        // the implementation normalises both to the &body= output form
+        // RFC 5724's ?body= form is preserved as-is
         $this->assertValidation(
-            'sms:741741?body=SEIZE',
-            'sms:741741&body=SEIZE'
+            'sms:741741?body=SEIZE'
+        );
+    }
+
+    public function test_sms_query_body_wins_over_path_body()
+    {
+        $this->assertValidation(
+            'sms:741741&body=PATH?body=QUERY',
+            'sms:741741?body=QUERY'
+        );
+    }
+
+    public function test_sms_strip_dangerous_query_params_standard_format()
+    {
+        $this->assertValidation(
+            'sms:5555?body=<script>alert("xss")</script>&subject=Test',
+            'sms:5555?body='
         );
     }
 

@@ -11,6 +11,12 @@
  * using the format: sms:number?body=message
  * However, the format: sms:number&body=message is commonly used on
  * the web, so it is also supported here.
+ *
+ * Whichever of the two forms the author wrote is preserved on output:
+ * the generic RFC 3986 parser only recognises "?" as the query
+ * delimiter, so a "&body=" ends up in the path and a "?body=" ends up
+ * in the query, and each is re-emitted the way it came in. Any other
+ * parameter (subject, etc.) is dropped.
  */
 
 class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
@@ -40,39 +46,25 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
         // Extract phone number and parameters from path and query
         $phone_number = $uri->path;
         $body_content = null;
+        $body_in_path = false;
 
-        // Check if path contains &param= syntax (non-standard but common)
+        // Non-standard but common: sms:number&body=message. The parser leaves
+        // this entirely in the path, since "&" is not a query delimiter.
         if (strpos($phone_number, '&') !== false) {
-            // Split by & to get phone number and parameters
             $parts = explode('&', $phone_number);
             $phone_number = array_shift($parts); // First part is the phone number
-
-            // Parse parameters from path
-            foreach ($parts as $param) {
-                if (strpos($param, '=') !== false) {
-                    list($param_name, $param_value) = explode('=', $param, 2);
-                    if ($param_name === 'body') {
-                        $body_content = $param_value;
-                    }
-                    // Other parameters (subject, invalid, etc.) are ignored/stripped
-                }
-            }
+            $body_content = $this->extractBody($parts);
+            $body_in_path = !is_null($body_content);
         }
 
-        // Also check query string for body parameter (standard ?body= syntax)
-        // Query takes precedence if present (parser converts &body= to ?body=)
-        // The query may contain multiple parameters like "body=Hello&subject=Test"
+        // Standard RFC 5724: sms:number?body=message. The query may hold several
+        // parameters, e.g. "body=Hello&subject=Test". A query body wins over a
+        // path one, so a mixed URI normalizes to the spec form.
         if (!is_null($uri->query)) {
-            // Parse query parameters
-            $query_parts = explode('&', $uri->query);
-            foreach ($query_parts as $query_param) {
-                if (strpos($query_param, '=') !== false) {
-                    list($param_name, $param_value) = explode('=', $query_param, 2);
-                    if ($param_name === 'body') {
-                        $body_content = $param_value;
-                        break; // Only take the first body parameter
-                    }
-                }
+            $query_body = $this->extractBody(explode('&', $uri->query));
+            if (!is_null($query_body)) {
+                $body_content = $query_body;
+                $body_in_path = false;
             }
         }
 
@@ -88,18 +80,40 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
             $body_content = $this->sanitizeBody($body_content);
         }
 
-        // Reconstruct the path with &body= syntax (non-standard but common format)
-        if ($body_content !== null) {
-            // Always include &body= even if empty (per test expectations)
+        // Re-emit the body in whichever form the author used, keeping an empty
+        // body rather than dropping the parameter entirely.
+        if (is_null($body_content)) {
+            $uri->path = $phone_number;
+            $uri->query = null;
+        } elseif ($body_in_path) {
             $uri->path = $phone_number . '&body=' . $body_content;
+            $uri->query = null;
         } else {
             $uri->path = $phone_number;
+            $uri->query = 'body=' . $body_content;
         }
 
-        // Clear query since we're using &body= in path format
-        $uri->query = null;
-
         return true;
+    }
+
+    /**
+     * Returns the first 'body' value from a list of "name=value" pairs, or
+     * null when there is none. Every other parameter is ignored/stripped.
+     * @param string[] $params
+     * @return string|null
+     */
+    private function extractBody($params)
+    {
+        foreach ($params as $param) {
+            if (strpos($param, '=') === false) {
+                continue;
+            }
+            list($param_name, $param_value) = explode('=', $param, 2);
+            if ($param_name === 'body') {
+                return $param_value;
+            }
+        }
+        return null;
     }
 
     /**
