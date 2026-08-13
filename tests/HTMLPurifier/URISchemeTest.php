@@ -443,6 +443,40 @@ class HTMLPurifier_URISchemeTest extends HTMLPurifier_URIHarness
         );
     }
 
+    public function test_sms_recovers_recipient_from_authority()
+    {
+        // sms://NUMBER?body=... parses the recipient into the host; keep it
+        // rather than emitting a message with nobody to send it to
+        $this->assertValidation(
+            'sms://5551234?body=HOME',
+            'sms:5551234?body=HOME'
+        );
+    }
+
+    public function test_sms_drops_body_when_authority_is_not_a_number()
+    {
+        $this->assertValidation(
+            'sms://example.com?body=HOME',
+            'sms:'
+        );
+    }
+
+    public function test_sms_drops_body_without_recipient()
+    {
+        $this->assertValidation(
+            'sms:?body=HOME',
+            'sms:'
+        );
+    }
+
+    public function test_sms_drops_path_body_without_recipient()
+    {
+        $this->assertValidation(
+            'sms:&body=HOME',
+            'sms:'
+        );
+    }
+
     public function test_sms_preserves_fragment()
     {
         $this->assertValidation(

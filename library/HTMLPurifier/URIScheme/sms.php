@@ -39,6 +39,10 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
      */
     public function doValidate(&$uri, $config, $context)
     {
+        // An authority is meaningless for sms, but sms://NUMBER?body=... puts
+        // the recipient in the host, so keep it as a fallback candidate rather
+        // than discarding the number and emitting a bodied, recipient-less URI.
+        $authority     = $uri->host;
         $uri->userinfo = null;
         $uri->host     = null;
         $uri->port     = null;
@@ -69,11 +73,15 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
         }
 
         // Clean the phone number part
-        $phone_number = preg_replace(
-            '/(?!^\+)[^\d]/',
-            '',
-            rawurldecode($phone_number)
-        );
+        $phone_number = $this->cleanPhoneNumber($phone_number);
+        if ($phone_number === '' && !is_null($authority)) {
+            $phone_number = $this->cleanPhoneNumber($authority);
+        }
+
+        // Never emit a message with nobody to send it to
+        if ($phone_number === '') {
+            $body_content = null;
+        }
 
         // Sanitize the body content if present
         if ($body_content !== null) {
@@ -94,6 +102,16 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
         }
 
         return true;
+    }
+
+    /**
+     * Reduces a recipient to digits, keeping only a leading plus.
+     * @param string $candidate
+     * @return string
+     */
+    private function cleanPhoneNumber($candidate)
+    {
+        return preg_replace('/(?!^\+)[^\d]/', '', rawurldecode($candidate));
     }
 
     /**
