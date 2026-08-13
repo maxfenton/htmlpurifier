@@ -3,20 +3,15 @@
 /**
  * Validates sms (for text messaging).
  *
- * The relevant specification for this protocol is RFC 5724.
- * This class normalizes SMS numbers so that they only include
- * digits, optionally with a leading plus for international numbers.
+ * The relevant specification for this protocol is RFC 5724, which spells
+ * the body parameter sms:number?body=message. The sms:number&body=message
+ * form is common on the web, so we take both and keep whichever was
+ * written: "&" leaves the body in the path, "?" leaves it in the query.
+ * Numbers are normalized as in tel, and we drop every parameter but body.
  *
- * According to RFC 5724, SMS URIs support the 'body' parameter
- * using the format: sms:number?body=message
- * However, the format: sms:number&body=message is commonly used on
- * the web, so it is also supported here.
- *
- * Whichever of the two forms the author wrote is preserved on output:
- * the generic RFC 3986 parser only recognises "?" as the query
- * delimiter, so a "&body=" ends up in the path and a "?body=" ends up
- * in the query, and each is re-emitted the way it came in. Any other
- * parameter (subject, etc.) is dropped.
+ * Note we read the body after %URI.AllowedSymbols has been applied, so a
+ * configuration that drops "&" or "=" from it encodes the delimiters we
+ * look for and the body goes with them, leaving the number.
  */
 
 class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
@@ -39,31 +34,24 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
      */
     public function doValidate(&$uri, $config, $context)
     {
-        // An authority is meaningless for sms, but sms://NUMBER?body=... puts
-        // the recipient in the host, so keep it as a fallback candidate rather
-        // than discarding the number and emitting a bodied, recipient-less URI.
-        $authority     = $uri->host;
+        $authority     = $uri->host; // sms://NUMBER hides the recipient here
         $uri->userinfo = null;
         $uri->host     = null;
         $uri->port     = null;
 
-        // Extract phone number and parameters from path and query
         $phone_number = $uri->path;
         $body_content = null;
         $body_in_path = false;
 
-        // Non-standard but common: sms:number&body=message. The parser leaves
-        // this entirely in the path, since "&" is not a query delimiter.
+        // "&" is no query delimiter, so this all lands in the path
         if (strpos($phone_number, '&') !== false) {
             $parts = explode('&', $phone_number);
-            $phone_number = array_shift($parts); // First part is the phone number
+            $phone_number = array_shift($parts);
             $body_content = $this->extractBody($parts);
             $body_in_path = !is_null($body_content);
         }
 
-        // Standard RFC 5724: sms:number?body=message. The query may hold several
-        // parameters, e.g. "body=Hello&subject=Test". A query body wins over a
-        // path one, so a mixed URI normalizes to the spec form.
+        // query body wins, so a mixed URI comes out in spec form
         if (!is_null($uri->query)) {
             $query_body = $this->extractBody(explode('&', $uri->query));
             if (!is_null($query_body)) {
@@ -72,40 +60,36 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
             }
         }
 
-        // Clean the phone number part
         $phone_number = $this->cleanPhoneNumber($phone_number);
         if ($phone_number === '' && !is_null($authority)) {
             $phone_number = $this->cleanPhoneNumber($authority);
         }
 
-        // Never emit a message with nobody to send it to
+        // nobody to send it to
         if ($phone_number === '') {
             $body_content = null;
         }
 
-        // Sanitize the body content if present
         if ($body_content !== null) {
             $body_content = $this->sanitizeBody($body_content);
         }
 
-        // Re-emit the body in whichever form the author used, keeping an empty
-        // body rather than dropping the parameter entirely.
-        if (is_null($body_content)) {
-            $uri->path = $phone_number;
-            $uri->query = null;
-        } elseif ($body_in_path) {
-            $uri->path = $phone_number . '&body=' . $body_content;
-            $uri->query = null;
-        } else {
-            $uri->path = $phone_number;
-            $uri->query = 'body=' . $body_content;
+        // an empty body keeps its parameter
+        $uri->path  = $phone_number;
+        $uri->query = null;
+        if (!is_null($body_content)) {
+            if ($body_in_path) {
+                $uri->path .= '&body=' . $body_content;
+            } else {
+                $uri->query = 'body=' . $body_content;
+            }
         }
 
         return true;
     }
 
     /**
-     * Reduces a recipient to digits, keeping only a leading plus.
+     * Reduce a recipient to digits, EXCEPT for a leading plus sign.
      * @param string $candidate
      * @return string
      */
@@ -115,11 +99,8 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
     }
 
     /**
-     * Returns the first 'body' value from a list of "name=value" pairs, or
-     * null when there is none. Every other parameter is ignored/stripped.
-     * Field names are matched case-insensitively: RFC 5724 writes the name
-     * as the ABNF literal "body", and RFC 5234 makes such literals
-     * case-insensitive. The name is always re-emitted lower-case.
+     * First 'body' value out of a list of name=value pairs, or null. RFC 5234
+     * makes the field name case-insensitive, so we take it in any case.
      * @param string[] $params
      * @return string|null
      */
@@ -138,14 +119,9 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
     }
 
     /**
-     * Normalizes SMS body content for embedding in an href.
-     *
-     * rawurlencode() percent-encodes everything outside the unreserved set,
-     * so "<", ">" and both quote characters leave here as %3C, %3E, %22 and
-     * %27 and cannot terminate the attribute or open a tag;
-     * HTMLPurifier_Generator::escape() then escapes the attribute value on
-     * top of that. Decoding first keeps the value from gaining an encoding
-     * level every time the same URI is purified.
+     * Percent-encode the body so it cannot escape the href; the generator
+     * escapes it again on output. We decode first so purifying the same URI
+     * twice does not stack encoding levels.
      * @param string $body
      * @return string
      */
