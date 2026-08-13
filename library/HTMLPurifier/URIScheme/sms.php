@@ -99,6 +99,9 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
     /**
      * Returns the first 'body' value from a list of "name=value" pairs, or
      * null when there is none. Every other parameter is ignored/stripped.
+     * Field names are matched case-insensitively: RFC 5724 writes the name
+     * as the ABNF literal "body", and RFC 5234 makes such literals
+     * case-insensitive. The name is always re-emitted lower-case.
      * @param string[] $params
      * @return string|null
      */
@@ -109,7 +112,7 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
                 continue;
             }
             list($param_name, $param_value) = explode('=', $param, 2);
-            if ($param_name === 'body') {
+            if (strtolower($param_name) === 'body') {
                 return $param_value;
             }
         }
@@ -117,25 +120,19 @@ class HTMLPurifier_URIScheme_sms extends HTMLPurifier_URIScheme
     }
 
     /**
-     * Sanitizes SMS body content
+     * Normalizes SMS body content for embedding in an href.
+     *
+     * rawurlencode() percent-encodes everything outside the unreserved set,
+     * so "<", ">" and both quote characters leave here as %3C, %3E, %22 and
+     * %27 and cannot terminate the attribute or open a tag;
+     * HTMLPurifier_Generator::escape() then escapes the attribute value on
+     * top of that. Decoding first keeps the value from gaining an encoding
+     * level every time the same URI is purified.
      * @param string $body
      * @return string
      */
     private function sanitizeBody($body)
     {
-        // Decode URL encoding first so encoded payloads are caught
-        $decoded = rawurldecode($body);
-
-        // Angle brackets are the primary HTML injection vector — reject the
-        // entire body if they appear rather than trying to strip them partially
-        if (strpos($decoded, '<') !== false || strpos($decoded, '>') !== false) {
-            return '';
-        }
-
-        // Strip quote characters that could break HTML attribute context
-        $sanitized = preg_replace('/[\'"]/', '', $decoded);
-
-        // Re-encode so the value is safe for embedding in a URL attribute
-        return rawurlencode($sanitized);
+        return rawurlencode(rawurldecode($body));
     }
 }
